@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chuvaware Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --surface-dim: #080e1e;
+    --on-surface: #dde2f9;
+    --on-surface-variant: #b9cacb;
+    --outline: #849495;
+    --primary: #00f2ff;
+    --secondary: #ddb7ff;
+    --warn-yellow: #ffe033;
+    --warn-orange: #ffaa00;
+    --error: #ff3131;
+    --glass-border: rgba(255,255,255,0.08);
+    --glass-bg: rgba(13,19,35,0.82);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Space Grotesk', sans-serif;
+    background-color: var(--surface-dim);
+    color: var(--on-surface);
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,242,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,242,255,0.03) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none; z-index: 0;
+  }
+
+  .ambient-glow { position: fixed; border-radius: 50%; filter: blur(120px); pointer-events: none; z-index: 0; }
+  .glow-cyan   { width: 600px; height: 600px; background: radial-gradient(circle, rgba(0,242,255,0.08) 0%, transparent 70%); top: -200px; left: -100px; }
+  .glow-purple { width: 500px; height: 500px; background: radial-gradient(circle, rgba(221,183,255,0.06) 0%, transparent 70%); bottom: -150px; right: -100px; }
+
+  .page-wrapper { position: relative; z-index: 1; max-width: 1440px; margin: 0 auto; padding: 32px 40px 60px; }
+
+  /* ── Header ── */
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; padding-bottom: 24px; border-bottom: 1px solid var(--glass-border); }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-icon { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; }
+  .brand-icon svg { width: 100%; height: 100%; filter: drop-shadow(0 0 8px var(--primary)); }
+  .brand-name { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+  .brand-name span { color: var(--primary); text-shadow: 0 0 12px rgba(0,242,255,0.6); }
+  .brand-tagline { font-size: 11px; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase; color: var(--on-surface-variant); margin-top: 2px; }
+  .header-right { display: flex; align-items: center; gap: 20px; }
+  .live-badge { display: flex; align-items: center; gap: 8px; background: rgba(0,242,255,0.07); border: 1px solid rgba(0,242,255,0.2); border-radius: 4px; padding: 6px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+  .led { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 8px var(--primary), 0 0 16px rgba(0,242,255,0.4); animation: pulse-led 2s ease-in-out infinite; }
+  @keyframes pulse-led { 0%,100%{ opacity:1; box-shadow:0 0 8px var(--primary),0 0 16px rgba(0,242,255,0.4); } 50%{ opacity:.4; box-shadow:none; } }
+  .clock { font-size: 18px; font-weight: 600; letter-spacing: 0.05em; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+  .clock-date { font-size: 11px; color: var(--outline); text-align: right; margin-top: 1px; }
+
+  /* ── KPI Grid: 5 cards ── */
+  .cards-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 20px; margin-bottom: 28px; }
+
+  .card {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px; padding: 22px 20px;
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    position: relative; overflow: hidden;
+    transition: border-color .3s, box-shadow .3s;
+  }
+  .card::before { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,rgba(0,242,255,.25),transparent); }
+  .card:hover { border-color: rgba(0,242,255,.18); box-shadow: 0 0 30px rgba(0,242,255,.05); }
+
+  .card-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:14px; }
+  .card-label  { font-size:10px; font-weight:500; letter-spacing:.12em; text-transform:uppercase; color:var(--on-surface-variant); line-height:1; }
+  .card-sublabel { font-size:9px; color:var(--outline); letter-spacing:.08em; text-transform:uppercase; margin-top:4px; }
+  .card-icon { width:28px; height:28px; opacity:.6; flex-shrink:0; }
+  .card-value { font-size:44px; font-weight:500; letter-spacing:-.05em; line-height:1; margin-bottom:6px; }
+  .card-unit  { font-size:15px; font-weight:400; color:var(--on-surface-variant); margin-left:3px; vertical-align:super; }
+  .card-footer { font-size:11px; color:var(--outline); margin-top:8px; }
+
+  /* accent colors per card */
+  .card-temp     .card-value { color:#74f5ff;         text-shadow:0 0 20px rgba(116,245,255,.4); }
+  .card-precip   .card-value { color:var(--primary);  text-shadow:0 0 20px rgba(0,242,255,.5); }
+  .card-humidity .card-value { color:var(--secondary);text-shadow:0 0 20px rgba(221,183,255,.4); }
+  .card-canal    .card-value { color:var(--warn-yellow); text-shadow:0 0 20px rgba(255,224,51,.4); transition:color .4s, text-shadow .4s; }
+
+  /* ── Canal fill bar ── */
+  .canal-fill-bar { margin-top:10px; }
+  .canal-track { height:4px; background:rgba(255,255,255,.08); border-radius:2px; overflow:hidden; }
+  .canal-fill  { height:100%; border-radius:2px; width:0%; transition:width .7s ease, background .4s; }
+  .canal-fill-label { font-size:10px; color:var(--outline); margin-top:5px; letter-spacing:.06em; }
+
+  /* ── Status de risco card ── */
+  .card-risco { transition: border-color .5s, background .5s; }
+  /* default skin overridden by JS */
+  .skin-baixo   { border-color:rgba(0,242,255,.3)!important;    background:rgba(0,70,80,.18)!important; }
+  .skin-baixo::before   { background:linear-gradient(90deg,transparent,rgba(0,242,255,.3),transparent)!important; }
+  .skin-medio   { border-color:rgba(255,224,51,.3)!important;   background:rgba(80,65,0,.18)!important; }
+  .skin-medio::before   { background:linear-gradient(90deg,transparent,rgba(255,224,51,.3),transparent)!important; }
+  .skin-alto    { border-color:rgba(255,170,0,.35)!important;   background:rgba(90,45,0,.2)!important; }
+  .skin-alto::before    { background:linear-gradient(90deg,transparent,rgba(255,170,0,.4),transparent)!important; }
+  .skin-critico { border-color:rgba(255,49,49,.4)!important;    background:rgba(120,0,10,.22)!important; }
+  .skin-critico::before { background:linear-gradient(90deg,transparent,rgba(255,49,49,.45),transparent)!important; }
+
+  .risco-badge { display:inline-flex; align-items:center; gap:10px; margin-top:6px; }
+  .risco-text  { font-size:26px; font-weight:700; letter-spacing:.06em; transition:color .4s, text-shadow .4s; }
+  .risco-text.nivel-baixo   { color:var(--primary);      text-shadow:0 0 14px var(--primary);      animation:none; }
+  .risco-text.nivel-medio   { color:var(--warn-yellow);  text-shadow:0 0 14px var(--warn-yellow);  animation:none; }
+  .risco-text.nivel-alto    { color:var(--warn-orange);  text-shadow:0 0 14px var(--warn-orange);  animation:pulse-orange 1.8s ease-in-out infinite; }
+  .risco-text.nivel-critico { color:var(--error);        text-shadow:0 0 16px var(--error),0 0 32px rgba(255,49,49,.4); animation:pulse-red 1.3s ease-in-out infinite; }
+  @keyframes pulse-red    { 0%,100%{ opacity:1; } 50%{ opacity:.65; } }
+  @keyframes pulse-orange { 0%,100%{ opacity:1; } 50%{ opacity:.7;  } }
+
+  .risco-led { width:10px; height:10px; border-radius:50%; transition:background .4s, box-shadow .4s; }
+  .risco-led.nivel-baixo   { background:var(--primary);     box-shadow:0 0 10px var(--primary);     animation:pulse-led 2s ease-in-out infinite; }
+  .risco-led.nivel-medio   { background:var(--warn-yellow); box-shadow:0 0 10px var(--warn-yellow); animation:pulse-led-y 2s ease-in-out infinite; }
+  .risco-led.nivel-alto    { background:var(--warn-orange); box-shadow:0 0 12px var(--warn-orange); animation:led-blink 1.8s ease-in-out infinite; }
+  .risco-led.nivel-critico { background:var(--error);       box-shadow:0 0 12px var(--error),0 0 24px rgba(255,49,49,.6); animation:led-blink 1.3s ease-in-out infinite; }
+  @keyframes pulse-led-y { 0%,100%{ opacity:1; } 50%{ opacity:.3; } }
+  @keyframes led-blink   { 0%,100%{ transform:scale(1); } 50%{ transform:scale(.5); } }
+
+  /* ── Charts ── */
+  .charts-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:28px; }
+  .chart-card { background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:8px; padding:24px; backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); position:relative; overflow:hidden; }
+  .chart-card::before { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,rgba(0,242,255,.2),transparent); }
+  .chart-title    { font-size:13px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--on-surface-variant); margin-bottom:4px; }
+  .chart-subtitle { font-size:11px; color:var(--outline); letter-spacing:.06em; margin-bottom:16px; }
+  .chart-legend   { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
+  .legend-item { display:flex; align-items:center; gap:8px; font-size:11px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; color:var(--on-surface-variant); }
+  .legend-dot  { width:20px; height:2px; border-radius:2px; flex-shrink:0; }
+  .dot-temp    { background:#74f5ff;         box-shadow:0 0 6px rgba(116,245,255,.6); }
+  .dot-precip  { background:var(--primary);  box-shadow:0 0 6px rgba(0,242,255,.6); }
+  .dot-hum     { background:var(--secondary);box-shadow:0 0 6px rgba(221,183,255,.5); }
+  .dot-canal   { background:var(--warn-yellow); box-shadow:0 0 6px rgba(255,224,51,.5); }
+
+  svg.chart { width:100%; overflow:visible; }
+  .y-label  { font:10px 'Space Grotesk',sans-serif; fill:var(--outline); letter-spacing:.06em; }
+  .x-label  { font:10px 'Space Grotesk',sans-serif; fill:var(--outline); letter-spacing:.04em; }
+  .grid-line{ stroke:rgba(255,255,255,.05); stroke-width:1; }
+  .axis-line{ stroke:rgba(255,255,255,.08); stroke-width:1; }
+
+  /* ── Status bar ── */
+  .status-bar { background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:8px; padding:18px 28px; backdrop-filter:blur(20px); display:flex; align-items:center; justify-content:space-between; gap:24px; flex-wrap:wrap; }
+  .status-section { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .status-label { font-size:11px; font-weight:500; letter-spacing:.12em; text-transform:uppercase; color:var(--outline); }
+  .sensor-chip  { display:flex; align-items:center; gap:6px; background:rgba(0,242,255,.06); border:1px solid rgba(0,242,255,.15); border-radius:4px; padding:5px 12px; font-size:11px; font-weight:600; letter-spacing:.08em; color:var(--primary); }
+  .sensor-chip .led { width:5px; height:5px; }
+  .status-divider { width:1px; height:30px; background:var(--glass-border); }
+  .last-update { font-size:12px; color:var(--outline); }
+  .last-update span { color:var(--on-surface-variant); font-weight:500; }
+
+  /* ── animations ── */
+  .chart-path   { stroke-dasharray:2000; stroke-dashoffset:2000; animation:draw-line 2s cubic-bezier(.4,0,.2,1) forwards; }
+  .chart-path-2 { animation-delay:.3s; }
+  .chart-path-3 { animation-delay:.55s; }
+  @keyframes draw-line { to{ stroke-dashoffset:0; } }
+  .fade-in { animation:fadeIn .6s ease forwards; opacity:0; }
+  @keyframes fadeIn { to{ opacity:1; } }
+  .d1{animation-delay:.1s}.d2{animation-delay:.2s}.d3{animation-delay:.3s}.d4{animation-delay:.4s}.d5{animation-delay:.5s}.d6{animation-delay:.6s}
+
+  ::-webkit-scrollbar{ width:6px; }
+  ::-webkit-scrollbar-track{ background:#080e1e; }
+  ::-webkit-scrollbar-thumb{ background:#2f3446; border-radius:3px; }
+</style>
+</head>
+<body>
+
+<div class="ambient-glow glow-cyan"></div>
+<div class="ambient-glow glow-purple"></div>
+
+<div class="page-wrapper">
+
+  <!-- HEADER -->
+  <header class="fade-in">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 44 44" fill="none">
+          <circle cx="22" cy="22" r="21" stroke="#00f2ff" stroke-width="1" stroke-opacity=".4"/>
+          <path d="M22 8c0 0-8 10-8 17 0 4.4 3.6 8 8 8s8-3.6 8-8c0-7-8-17-8-17z" fill="url(#dg)" stroke="#00f2ff" stroke-width="1"/>
+          <path d="M18 24 Q22 20 26 24" stroke="rgba(0,242,255,.4)" stroke-width="1" fill="none"/>
+          <defs><linearGradient id="dg" x1="22" y1="8" x2="22" y2="33" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#00f2ff" stop-opacity=".8"/><stop offset="100%" stop-color="#00dbe7" stop-opacity=".2"/></linearGradient></defs>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-name">Chuva<span>ware</span> Intelligence</div>
+        <div class="brand-tagline">Environmental Monitoring System</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="live-badge"><div class="led"></div>Transmissão ao Vivo</div>
+      <div>
+        <div class="clock" id="clock">--:--:--</div>
+        <div class="clock-date" id="date">---</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- KPI CARDS -->
+  <div class="cards-grid">
+
+    <!-- 1. Temperatura -->
+    <div class="card card-temp fade-in d1">
+      <div class="card-header">
+        <div>
+          <div class="card-label">Temperatura Atual</div>
+          <div class="card-sublabel">Sensor térmico · °C</div>
+        </div>
+        <svg class="card-icon" viewBox="0 0 32 32" fill="none">
+          <rect x="13" y="4" width="6" height="16" rx="3" stroke="#74f5ff" stroke-width="1.5" fill="rgba(116,245,255,.08)"/>
+          <circle cx="16" cy="22" r="5" stroke="#74f5ff" stroke-width="1.5" fill="rgba(116,245,255,.18)"/>
+          <line x1="20" y1="9"  x2="23" y2="9"  stroke="#74f5ff" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="20" y1="13" x2="22" y2="13" stroke="#74f5ff" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="card-value" id="kpi-temp">--<span class="card-unit">°C</span></div>
+      <div class="card-footer" id="kpi-temp-sub">Aguardando leitura…</div>
+    </div>
+
+    <!-- 2. Intensidade de Precipitação -->
+    <div class="card card-precip fade-in d2">
+      <div class="card-header">
+        <div>
+          <div class="card-label">Intensidade Precipitação</div>
+          <div class="card-sublabel">API raw 0–1024 → 0–100%</div>
+        </div>
+        <svg class="card-icon" viewBox="0 0 32 32" fill="none">
+          <path d="M16 4c0 0-8 10-8 16 0 4.4 3.6 8 8 8s8-3.6 8-8c0-6-8-16-8-16z" stroke="#00f2ff" stroke-width="1.5" fill="rgba(0,242,255,.1)"/>
+          <line x1="11" y1="23" x2="9"  y2="27" stroke="#00f2ff" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="16" y1="25" x2="16" y2="29" stroke="#00f2ff" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="21" y1="23" x2="23" y2="27" stroke="#00f2ff" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="card-value" id="kpi-precip">--<span class="card-unit">%</span></div>
+      <div class="card-footer" id="kpi-precip-sub">Raw: -- / 1024</div>
+    </div>
+
+    <!-- 3. Umidade do Ar -->
+    <div class="card card-humidity fade-in d3">
+      <div class="card-header">
+        <div>
+          <div class="card-label">Umidade do Ar</div>
+          <div class="card-sublabel">Umidade relativa · %</div>
+        </div>
+        <svg class="card-icon" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="11" stroke="#ddb7ff" stroke-width="1.5" fill="rgba(221,183,255,.07)"/>
+          <path d="M10 18 Q16 10 22 18" stroke="#ddb7ff" stroke-width="1.5" fill="rgba(221,183,255,.15)"/>
+          <path d="M10 18 Q16 26 22 18" stroke="#ddb7ff" stroke-width="1.2" fill="none" stroke-dasharray="2 2"/>
+        </svg>
+      </div>
+      <div class="card-value" id="kpi-hum">--<span class="card-unit">%</span></div>
+      <div class="card-footer" id="kpi-hum-sub">Aguardando leitura…</div>
+    </div>
+
+    <!-- 4. Nível do Canal -->
+    <div class="card card-canal fade-in d4">
+      <div class="card-header">
+        <div>
+          <div class="card-label">Nível do Canal</div>
+          <div class="card-sublabel">Ultrassônico · cm livre</div>
+        </div>
+        <svg class="card-icon" viewBox="0 0 32 32" fill="none">
+          <line x1="16" y1="4"  x2="16" y2="14" stroke="#ffe033" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M10 8 Q16 2 22 8"  stroke="#ffe033" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+          <path d="M7  11 Q16 2 25 11" stroke="#ffe033" stroke-width=".7"  fill="none" stroke-linecap="round" opacity=".4"/>
+          <path d="M4 22 Q8 18 12 22 Q16 26 20 22 Q24 18 28 22 L28 29 L4 29Z" fill="rgba(255,224,51,.15)" stroke="#ffe033" stroke-width="1"/>
+        </svg>
+      </div>
+      <div class="card-value" id="kpi-canal">--<span class="card-unit">cm</span></div>
+      <div class="canal-fill-bar">
+        <div class="canal-track">
+          <div class="canal-fill" id="canal-fill-bar" style="background:#ffe033;"></div>
+        </div>
+        <div class="canal-fill-label" id="canal-fill-label">Calculando…</div>
+      </div>
+    </div>
+
+    <!-- 5. Status de Risco -->
+    <div class="card card-risco skin-baixo fade-in d5" id="risco-card">
+      <div class="card-header">
+        <div>
+          <div class="card-label">Status de Risco</div>
+          <div class="card-sublabel" id="risco-sublabel">Baseado no nível do canal</div>
+        </div>
+        <svg class="card-icon" viewBox="0 0 32 32" fill="none">
+          <path d="M16 4L28 27H4L16 4Z" stroke="#ff3131" stroke-width="1.5" fill="rgba(255,49,49,.12)"/>
+          <line x1="16" y1="12" x2="16" y2="20" stroke="#ff3131" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="16" cy="23" r="1.5" fill="#ff3131"/>
+        </svg>
+      </div>
+      <div class="risco-badge">
+        <div class="risco-led nivel-baixo" id="risco-led"></div>
+        <div class="risco-text nivel-baixo" id="risco-text">BAIXO</div>
+      </div>
+      <div class="card-footer" id="risco-desc">Canal em nível seguro</div>
+    </div>
+
+  </div>
+
+  <!-- CHARTS -->
+  <div class="charts-grid">
+
+    <!-- Gráfico 1: Temp + Precipitação + Umidade -->
+    <div class="chart-card fade-in d5">
+      <div class="chart-title">Temperatura · Precipitação · Umidade</div>
+      <div class="chart-subtitle">Série histórica · Eixo Y normalizado 0–100 · Tempo real</div>
+      <div class="chart-legend">
+        <div class="legend-item"><div class="legend-dot dot-temp"></div>Temp (°C)</div>
+        <div class="legend-item"><div class="legend-dot dot-precip"></div>Precipitação (%)</div>
+        <div class="legend-item"><div class="legend-dot dot-hum"></div>Umidade (%)</div>
+      </div>
+      <div style="width:100%;position:relative;">
+        <svg class="chart" viewBox="0 0 580 225" preserveAspectRatio="xMidYMid meet" id="chart1">
+          <line class="grid-line" x1="50" y1="10"  x2="570" y2="10"/>
+          <line class="grid-line" x1="50" y1="57"  x2="570" y2="57"/>
+          <line class="grid-line" x1="50" y1="104" x2="570" y2="104"/>
+          <line class="grid-line" x1="50" y1="151" x2="570" y2="151"/>
+          <line class="grid-line" x1="50" y1="198" x2="570" y2="198"/>
+          <text class="y-label" x="44" y="14"  text-anchor="end">100</text>
+          <text class="y-label" x="44" y="61"  text-anchor="end">75</text>
+          <text class="y-label" x="44" y="108" text-anchor="end">50</text>
+          <text class="y-label" x="44" y="155" text-anchor="end">25</text>
+          <text class="y-label" x="44" y="202" text-anchor="end">0</text>
+          <line class="axis-line" x1="50" y1="10"  x2="50"  y2="198"/>
+          <line class="axis-line" x1="50" y1="198" x2="570" y2="198"/>
+          <defs>
+            <linearGradient id="gTemp"   x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#74f5ff" stop-opacity=".22"/><stop offset="100%" stop-color="#74f5ff" stop-opacity="0"/></linearGradient>
+            <linearGradient id="gPrecip" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#00f2ff" stop-opacity=".22"/><stop offset="100%" stop-color="#00f2ff" stop-opacity="0"/></linearGradient>
+            <linearGradient id="gHum"    x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ddb7ff" stop-opacity=".18"/><stop offset="100%" stop-color="#ddb7ff" stop-opacity="0"/></linearGradient>
+          </defs>
+          <path id="fill-temp"   fill="url(#gTemp)"   opacity="0" d=""/>
+          <path id="fill-precip" fill="url(#gPrecip)" opacity="0" d=""/>
+          <path id="fill-hum"    fill="url(#gHum)"    opacity="0" d=""/>
+          <path id="line-temp"   class="chart-path"       fill="none" stroke="#74f5ff"  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d=""/>
+          <path id="line-precip" class="chart-path chart-path-2" fill="none" stroke="#00f2ff"  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d=""/>
+          <path id="line-hum"    class="chart-path chart-path-3" fill="none" stroke="#ddb7ff"  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d=""/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Gráfico 2: Nível do Canal -->
+    <div class="chart-card fade-in d6">
+      <div class="chart-title">Nível do Canal — Histórico</div>
+      <div class="chart-subtitle">Sensor ultrassônico · Distância cm · ↓ menor = mais cheio = maior risco</div>
+      <div class="chart-legend">
+        <div class="legend-item"><div class="legend-dot dot-canal"></div>Distância (cm)</div>
+      </div>
+      <div style="width:100%;position:relative;">
+        <svg class="chart" viewBox="0 0 580 225" preserveAspectRatio="xMidYMid meet" id="chart2">
+          <line class="grid-line" x1="50" y1="10"  x2="570" y2="10"/>
+          <line class="grid-line" x1="50" y1="57"  x2="570" y2="57"/>
+          <line class="grid-line" x1="50" y1="104" x2="570" y2="104"/>
+          <line class="grid-line" x1="50" y1="151" x2="570" y2="151"/>
+          <line class="grid-line" x1="50" y1="198" x2="570" y2="198"/>
+          <!-- y-labels in cm added by JS -->
+          <line class="axis-line" x1="50" y1="10"  x2="50"  y2="198"/>
+          <line class="axis-line" x1="50" y1="198" x2="570" y2="198"/>
+          <defs>
+            <linearGradient id="gCanal" x1="0" y1="0" x2="0" y2="1">
+              <stop id="canal-grad-top" offset="0%"   stop-color="#ffe033" stop-opacity=".22"/>
+              <stop offset="100%" stop-color="#ffe033" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <path id="fill-canal" fill="url(#gCanal)" opacity="0" d=""/>
+          <path id="line-canal" class="chart-path" fill="none" stroke="#ffe033" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d=""/>
+        </svg>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="status-bar fade-in">
+    <div class="status-section">
+      <div class="status-label">Sensores</div>
+      <div class="sensor-chip"><div class="led"></div>SEN-001 · Temperatura</div>
+      <div class="sensor-chip"><div class="led"></div>SEN-002 · Precipitação</div>
+      <div class="sensor-chip"><div class="led"></div>SEN-003 · Umidade</div>
+      <div class="sensor-chip"><div class="led"></div>SEN-004 · Canal (US)</div>
+    </div>
+    <div class="status-divider"></div>
+    <div class="last-update">Última atualização: <span id="last-update-time">--:--:--</span></div>
+    <div class="status-divider"></div>
+    <div class="last-update">Fonte: <span>fakedata.json · API Local</span></div>
+    <div class="status-divider"></div>
+    <div class="last-update">Versão: <span>v2.0.0</span></div>
+  </div>
+
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// CLOCK
+// ══════════════════════════════════════════════════════
+function updateClock() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const DAYS   = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  document.getElementById('clock').textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  document.getElementById('date').textContent  = `${DAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+  document.getElementById('last-update-time').textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ══════════════════════════════════════════════════════
+// CONVERSÕES E HELPERS
+// ══════════════════════════════════════════════════════
+
+// Precipitação: raw 0–1024 → % 0–100
+function rawToPercent(raw) { return Math.min(100, Math.max(0, (raw / 1024) * 100)); }
+
+// Nível do canal: limiares em cm (sensor mede distância ao topo da água)
+// Quanto MENOR a distância, MAIS CHEIO o canal → MAIOR o risco
+const CANAL_MAX    = 300; // cm: sensor tão longe quanto possível = vazio
+const LIM_CRITICO  = 60;  // < 60 cm → CRÍTICO
+const LIM_ALTO     = 120; // 60–120 → ALTO
+const LIM_MEDIO    = 200; // 120–200 → MÉDIO
+                          // >= 200 → BAIXO
+
+function canalRisco(cm) {
+  if (cm < LIM_CRITICO) return 'critico';
+  if (cm < LIM_ALTO)    return 'alto';
+  if (cm < LIM_MEDIO)   return 'medio';
+  return 'baixo';
+}
+
+// Ocupação % do canal (0 = vazio, 100 = transbordando)
+function canalOcup(cm) { return Math.min(100, Math.max(0, ((CANAL_MAX - cm) / CANAL_MAX) * 100)); }
+
+// Temperatura: normaliza para eixo 0–100 (range físico 10–45 °C)
+function normTemp(t) { return Math.min(100, Math.max(0, ((t - 10) / 35) * 100)); }
+
+// ══════════════════════════════════════════════════════
+// SÉRIE DE DADOS HISTÓRICOS
+// Baseados no fakedata.json (field1 = precipitação raw 0–1024)
+// Temperatura e umidade correlacionadas; canal inversamente proporcional à chuva
+// ══════════════════════════════════════════════════════
+const rawFeed = [
+  { ts: "2026-04-09T23:09:25Z", field1: 20  },
+  { ts: "2026-04-09T23:09:47Z", field1: 20  },
+  { ts: "2026-04-21T19:57:08Z", field1: 20  },
+  { ts: "2026-04-21T19:57:29Z", field1: 30  },
+  { ts: "2026-04-21T19:57:51Z", field1: 30  },
+  { ts: "2026-04-21T21:19:49Z", field1: 59  },
+  { ts: "2026-04-21T21:20:05Z", field1: 60  },
+  { ts: "2026-04-21T21:20:37Z", field1: 60  },
+  { ts: "2026-04-21T21:20:52Z", field1: 60  },
+  { ts: "2026-04-21T21:21:09Z", field1: 77  },
+  { ts: "2026-04-21T21:22:50Z", field1: 77  },
+  { ts: "2026-04-21T21:23:16Z", field1: 38  },
+  { ts: "2026-04-21T21:24:12Z", field1: 38  },
+  { ts: "2026-04-21T21:24:29Z", field1: 34  },
+  { ts: "2026-04-21T21:33:30Z", field1: 34  },
+  { ts: "2026-04-21T21:47:38Z", field1: 34  },
+];
+
+// Constrói série completa com todos os campos
+function buildPoint(ts, precipRaw) {
+  const precipPct = rawToPercent(precipRaw);
+  const temp      = parseFloat((22 + (precipPct / 100) * 6 + (Math.random() - 0.5) * 1.5).toFixed(1));
+  const humidity  = parseFloat((42 + (precipPct / 100) * 52 + (Math.random() - 0.5) * 3).toFixed(1));
+  // Canal: chuva alta → canal sobe → distância cai
+  const canalCm   = Math.max(20, Math.round(CANAL_MAX - (precipPct / 100) * 260 + (Math.random() - 0.5) * 12));
+  return { ts: new Date(ts), precipRaw, precipPct, temp, humidity, canalCm };
+}
+
+const series = rawFeed.map(f => buildPoint(f.ts, f.field1)).sort((a,b) => a.ts - b.ts);
+
+// ══════════════════════════════════════════════════════
+// ATUALIZA KPI CARDS
+// ══════════════════════════════════════════════════════
+const RISK_COLORS = { baixo:'#00f2ff', medio:'#ffe033', alto:'#ffaa00', critico:'#ff3131' };
+const RISK_LABELS = { baixo:'BAIXO', medio:'MÉDIO', alto:'ALTO', critico:'CRÍTICO' };
+const RISK_DESC   = {
+  baixo:   'Canal em nível seguro',
+  medio:   'Atenção: nível moderado',
+  alto:    'Alerta: canal elevado',
+  critico: 'Iminente transbordo!'
+};
+const RISK_SUB = {
+  baixo:   `Canal ≥ ${LIM_MEDIO} cm livre`,
+  medio:   `Canal ${LIM_ALTO}–${LIM_MEDIO} cm livre`,
+  alto:    `Canal ${LIM_CRITICO}–${LIM_ALTO} cm livre`,
+  critico: `Canal < ${LIM_CRITICO} cm livre`
+};
+
+function applyRisco(nivel) {
+  const card  = document.getElementById('risco-card');
+  const led   = document.getElementById('risco-led');
+  const txt   = document.getElementById('risco-text');
+
+  // remove old skin/nivel classes
+  ['baixo','medio','alto','critico'].forEach(n => {
+    card.classList.remove('skin-' + n);
+    led.classList.remove('nivel-' + n);
+    txt.classList.remove('nivel-' + n);
+  });
+
+  card.classList.add('skin-' + nivel);
+  led.classList.add('nivel-' + nivel);
+  txt.classList.add('nivel-' + nivel);
+  txt.textContent = RISK_LABELS[nivel];
+  document.getElementById('risco-desc').textContent    = RISK_DESC[nivel];
+  document.getElementById('risco-sublabel').textContent = RISK_SUB[nivel];
+}
+
+function updateKPIs(p) {
+  // Temperatura
+  document.getElementById('kpi-temp').innerHTML = `${p.temp.toFixed(1)}<span class="card-unit">°C</span>`;
+  document.getElementById('kpi-temp-sub').textContent = p.temp < 20 ? 'Temperatura amena' : p.temp < 28 ? 'Temperatura moderada' : 'Temperatura elevada';
+
+  // Precipitação
+  document.getElementById('kpi-precip').innerHTML = `${p.precipPct.toFixed(1)}<span class="card-unit">%</span>`;
+  document.getElementById('kpi-precip-sub').textContent = `Raw: ${p.precipRaw} / 1024`;
+
+  // Umidade
+  document.getElementById('kpi-hum').innerHTML = `${Math.round(p.humidity)}<span class="card-unit">%</span>`;
+  document.getElementById('kpi-hum-sub').textContent = p.humidity < 40 ? 'Ar seco' : p.humidity < 70 ? 'Umidade normal' : 'Saturação elevada — atenção';
+
+  // Canal
+  const nivel = canalRisco(p.canalCm);
+  const ocup  = canalOcup(p.canalCm);
+  const canalColor = RISK_COLORS[nivel];
+
+  const canalValEl = document.getElementById('kpi-canal');
+  canalValEl.innerHTML = `${p.canalCm}<span class="card-unit">cm</span>`;
+  canalValEl.style.color = canalColor;
+  canalValEl.style.textShadow = `0 0 20px ${canalColor}60`;
+
+  const barEl = document.getElementById('canal-fill-bar');
+  barEl.style.width      = ocup.toFixed(1) + '%';
+  barEl.style.background = canalColor;
+
+  const barLbl = document.getElementById('canal-fill-label');
+  barLbl.textContent = `${ocup.toFixed(0)}% ocupação · ${RISK_DESC[nivel]}`;
+
+  // Status de risco
+  applyRisco(nivel);
+}
+
+// Inicializa com último ponto
+const latest = series[series.length - 1];
+updateKPIs(latest);
+
+// ══════════════════════════════════════════════════════
+// SVG ENGINE
+// ══════════════════════════════════════════════════════
+const SVG_W = 520, SVG_H = 188, X0 = 50, Y0 = 10;
+
+function sy(val, lo, hi) {
+  if (hi === lo) return Y0 + SVG_H / 2;
+  return Y0 + SVG_H - ((val - lo) / (hi - lo)) * SVG_H;
+}
+function sx(i, n) { return n <= 1 ? X0 : X0 + (i / (n - 1)) * SVG_W; }
+
+function spline(pts) {
+  if (pts.length < 2) return '';
+  let d = `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0,i-1)], p1 = pts[i], p2 = pts[i+1], p3 = pts[Math.min(pts.length-1,i+2)];
+    const c1x = p1.x + (p2.x-p0.x)/6, c1y = p1.y + (p2.y-p0.y)/6;
+    const c2x = p2.x - (p3.x-p1.x)/6, c2y = p2.y - (p3.y-p1.y)/6;
+    d += ` C ${c1x.toFixed(2)},${c1y.toFixed(2)} ${c2x.toFixed(2)},${c2y.toFixed(2)} ${p2.x.toFixed(2)},${p2.y.toFixed(2)}`;
+  }
+  return d;
+}
+
+function areaClosed(linePath, x0, x1) {
+  return linePath + ` L ${x1.toFixed(2)},${Y0+SVG_H} L ${x0.toFixed(2)},${Y0+SVG_H} Z`;
+}
+
+function showFill(el, delay) {
+  setTimeout(() => { el.style.transition = 'opacity 1.2s ease'; el.style.opacity = '1'; }, delay);
+}
+
+// Tooltip singleton
+const TIP = (() => {
+  const t = document.createElement('div');
+  t.style.cssText = 'position:fixed;pointer-events:none;z-index:9999;background:rgba(8,14,30,.96);border:1px solid rgba(0,242,255,.3);border-radius:6px;padding:9px 14px;font-family:"Space Grotesk",sans-serif;font-size:12px;color:#dde2f9;display:none;white-space:nowrap;box-shadow:0 0 18px rgba(0,242,255,.12);line-height:1.7;';
+  document.body.appendChild(t);
+  return t;
+})();
+
+function dot(svg, x, y, color, html) {
+  const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+  c.setAttribute('cx', x.toFixed(2)); c.setAttribute('cy', y.toFixed(2));
+  c.setAttribute('r','4'); c.setAttribute('fill', color); c.setAttribute('class','data-dot');
+  c.style.cssText = `cursor:pointer;filter:drop-shadow(0 0 4px ${color});transition:r .15s;`;
+  c.addEventListener('mouseenter', () => { c.setAttribute('r','6'); TIP.innerHTML = html; TIP.style.display = 'block'; });
+  c.addEventListener('mousemove',  e  => { TIP.style.left=(e.clientX+14)+'px'; TIP.style.top=(e.clientY-54)+'px'; });
+  c.addEventListener('mouseleave', () => { c.setAttribute('r','4'); TIP.style.display='none'; });
+  svg.appendChild(c);
+}
+
+function fmtTs(ts) {
+  if (!ts) return '';
+  const pad = n => String(n).padStart(2,'0');
+  return `${pad(ts.getDate())}/${pad(ts.getMonth()+1)} ${pad(ts.getHours())}:${pad(ts.getMinutes())}`;
+}
+
+function setXLabels(svg, pts, count=5) {
+  svg.querySelectorAll('.xl-dyn').forEach(e=>e.remove());
+  const step = Math.max(1, Math.floor(pts.length/count));
+  const idx  = [];
+  for (let i=0;i<pts.length;i+=step) idx.push(i);
+  if (!idx.includes(pts.length-1)) idx.push(pts.length-1);
+  idx.forEach(i=>{
+    const p = pts[i];
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.textContent = p.ts ? `${String(p.ts.getHours()).padStart(2,'0')}:${String(p.ts.getMinutes()).padStart(2,'0')}` : '--';
+    t.setAttribute('x', p.x.toFixed(2)); t.setAttribute('y','218');
+    t.setAttribute('text-anchor','middle'); t.setAttribute('class','x-label xl-dyn');
+    svg.appendChild(t);
+  });
+}
+
+// ── CHART 1: Temp + Precipitação + Umidade ──
+// Todos mapeados 0-100 no eixo Y.
+// Temp: range 10-45°C → normalizado
+// Precipitação: já é 0-100%
+// Umidade: já é 0-100%
+function buildChart1() {
+  const svg = document.getElementById('chart1');
+  const n   = series.length;
+  svg.querySelectorAll('.data-dot,.xl-dyn').forEach(e=>e.remove());
+
+  const tPts = series.map((p,i) => ({ x:sx(i,n), y:sy(normTemp(p.temp),0,100),   ts:p.ts, raw:p.temp,     label:`<span style="color:#74f5ff">● Temperatura</span> <b>${p.temp.toFixed(1)} °C</b>` }));
+  const pPts = series.map((p,i) => ({ x:sx(i,n), y:sy(p.precipPct,0,100),         ts:p.ts, raw:p.precipPct,label:`<span style="color:#00f2ff">● Precipitação</span> <b>${p.precipPct.toFixed(1)}%</b> <span style="color:#849495">(raw ${p.precipRaw})</span>` }));
+  const hPts = series.map((p,i) => ({ x:sx(i,n), y:sy(p.humidity,0,100),           ts:p.ts, raw:p.humidity, label:`<span style="color:#ddb7ff">● Umidade</span> <b>${p.humidity.toFixed(0)}%</b>` }));
+
+  const tPath = spline(tPts), pPath = spline(pPts), hPath = spline(hPts);
+  const fx = tPts[0].x, lx = tPts[n-1].x;
+
+  document.getElementById('line-temp').setAttribute('d',   tPath);
+  document.getElementById('line-precip').setAttribute('d', pPath);
+  document.getElementById('line-hum').setAttribute('d',    hPath);
+
+  const ft = document.getElementById('fill-temp'),
+        fp = document.getElementById('fill-precip'),
+        fh = document.getElementById('fill-hum');
+  ft.setAttribute('d', areaClosed(tPath,fx,lx));
+  fp.setAttribute('d', areaClosed(pPath,fx,lx));
+  fh.setAttribute('d', areaClosed(hPath,fx,lx));
+  showFill(ft, 900); showFill(fp, 1100); showFill(fh, 1300);
+
+  tPts.forEach((p,i) => dot(svg, p.x, p.y, '#74f5ff', `${p.label}<br><span style="color:#849495;font-size:10px">${fmtTs(series[i].ts)}</span>`));
+  pPts.forEach((p,i) => dot(svg, p.x, p.y, '#00f2ff', `${p.label}<br><span style="color:#849495;font-size:10px">${fmtTs(series[i].ts)}</span>`));
+  hPts.forEach((p,i) => dot(svg, p.x, p.y, '#ddb7ff', `${p.label}<br><span style="color:#849495;font-size:10px">${fmtTs(series[i].ts)}</span>`));
+
+  setXLabels(svg, tPts.map((p,i)=>({...p, ts:series[i].ts})));
+}
+
+// ── CHART 2: Nível do Canal ──
+// Eixo Y em cm real. Linha alta = canal seguro. Linha baixa = canal cheio = risco.
+// Zonas de risco no fundo: vermelho embaixo, azul em cima.
+function buildChart2() {
+  const svg = document.getElementById('chart2');
+  const n   = series.length;
+  svg.querySelectorAll('.data-dot,.xl-dyn,.rz,.yl-dyn').forEach(e=>e.remove());
+
+  const allCm = series.map(p=>p.canalCm);
+  const yLo   = Math.max(0,   Math.min(...allCm) - 25);
+  const yHi   = Math.min(350, Math.max(...allCm) + 35);
+
+  // Y-axis labels em cm
+  [0,.25,.5,.75,1].forEach(f => {
+    const v  = yLo + (yHi-yLo)*f;
+    const yy = sy(v, yLo, yHi);
+    const t  = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.textContent = Math.round(v)+'cm';
+    t.setAttribute('x','44'); t.setAttribute('y', yy.toFixed(2));
+    t.setAttribute('text-anchor','end'); t.setAttribute('class','y-label yl-dyn');
+    svg.appendChild(t);
+  });
+
+  // Zonas de risco (menores valores = maior risco → vermelho fica na PARTE BAIXA do gráfico)
+  const zones = [
+    { lo: yLo,        hi: LIM_CRITICO, color:'rgba(255,49,49,.12)',  label:'CRÍTICO' },
+    { lo: LIM_CRITICO,hi: LIM_ALTO,    color:'rgba(255,102,0,.09)',  label:'ALTO'    },
+    { lo: LIM_ALTO,   hi: LIM_MEDIO,   color:'rgba(255,170,0,.07)',  label:'MÉDIO'   },
+    { lo: LIM_MEDIO,  hi: yHi,         color:'rgba(0,242,255,.04)',  label:'BAIXO'   },
+  ];
+  const pivot = svg.querySelector('path');
+  zones.forEach(z => {
+    const zLo = Math.max(z.lo, yLo), zHi = Math.min(z.hi, yHi);
+    if (zLo >= zHi) return;
+    const y1 = sy(zHi, yLo, yHi), y2 = sy(zLo, yLo, yHi);
+    const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    r.setAttribute('x','50'); r.setAttribute('y', y1.toFixed(2));
+    r.setAttribute('width','520'); r.setAttribute('height',(y2-y1).toFixed(2));
+    r.setAttribute('fill', z.color); r.setAttribute('class','rz');
+    svg.insertBefore(r, pivot);
+    const lt = document.createElementNS('http://www.w3.org/2000/svg','text');
+    lt.textContent = z.label;
+    lt.setAttribute('x','574'); lt.setAttribute('y', ((y1+y2)/2+4).toFixed(2));
+    lt.setAttribute('text-anchor','start'); lt.setAttribute('class','rz');
+    lt.style.cssText='font:9px "Space Grotesk",sans-serif;fill:rgba(255,255,255,.25);letter-spacing:.1em;';
+    svg.appendChild(lt);
+  });
+
+  const cPts = series.map((p,i) => ({
+    x: sx(i,n), y: sy(p.canalCm, yLo, yHi), ts: p.ts, val: p.canalCm
+  }));
+  const cPath = spline(cPts);
+  const fx = cPts[0].x, lx = cPts[n-1].x;
+
+  // Cor da linha conforme último risco
+  const lastNivel = canalRisco(cPts[n-1].val);
+  const lineColor = RISK_COLORS[lastNivel];
+
+  const lineEl = document.getElementById('line-canal');
+  lineEl.setAttribute('d', cPath);
+  lineEl.setAttribute('stroke', lineColor);
+  lineEl.style.filter = `drop-shadow(0 0 5px ${lineColor}80)`;
+
+  const gTop = svg.querySelector('#canal-grad-top');
+  if (gTop) gTop.setAttribute('stop-color', lineColor);
+
+  const fillEl = document.getElementById('fill-canal');
+  fillEl.setAttribute('d', areaClosed(cPath, fx, lx));
+  showFill(fillEl, 1000);
+
+  // Dots, cor por zona
+  cPts.forEach((p,i) => {
+    const nv  = canalRisco(p.val);
+    const dc  = RISK_COLORS[nv];
+    const oc  = canalOcup(p.val);
+    dot(svg, p.x, p.y, dc,
+      `<span style="color:${dc}">● Canal ${RISK_LABELS[nv]}</span> <b>${p.val} cm livre</b><br>` +
+      `Ocupação: ${oc.toFixed(0)}% · ${RISK_DESC[nv]}<br>` +
+      `<span style="color:#849495;font-size:10px">${fmtTs(series[i].ts)}</span>`
+    );
+  });
+
+  setXLabels(svg, cPts.map((p,i)=>({...p, ts:series[i].ts})));
+}
+
+buildChart1();
+buildChart2();
+
+// ══════════════════════════════════════════════════════
+// LIVE UPDATE — drift a cada 10 s
+// ══════════════════════════════════════════════════════
+let liveRaw    = latest.precipRaw;
+let liveCanalCm = latest.canalCm;
+
+setInterval(() => {
+  // drift precipitação raw (0–1024)
+  liveRaw = Math.max(0, Math.min(1024, liveRaw + (Math.random() - 0.45) * 45));
+  const pct  = rawToPercent(liveRaw);
+  const temp = parseFloat((22 + (pct/100)*6 + (Math.random()-.5)*1.5).toFixed(1));
+  const hum  = parseFloat((42 + (pct/100)*52 + (Math.random()-.5)*3).toFixed(1));
+  // canal: mais chuva → canal sobe → distância cai
+  liveCanalCm = Math.max(20, Math.min(CANAL_MAX, liveCanalCm - (pct/100)*4 + (Math.random()-.4)*10));
+  const canalCm = Math.round(liveCanalCm);
+
+  const newPt = { ts:new Date(), precipRaw:Math.round(liveRaw), precipPct:pct, temp, humidity:hum, canalCm };
+  series.push(newPt);
+  if (series.length > 40) series.shift();
+
+  updateKPIs(newPt);
+
+  // Rebuild chart 1
+  document.querySelectorAll('#chart1 .data-dot,#chart1 .xl-dyn').forEach(e=>e.remove());
+  buildChart1();
+
+  // Rebuild chart 2
+  document.querySelectorAll('#chart2 .data-dot,#chart2 .xl-dyn,#chart2 .rz,#chart2 .yl-dyn').forEach(e=>e.remove());
+  buildChart2();
+}, 10000);
+</script>
+</body>
+</html>
