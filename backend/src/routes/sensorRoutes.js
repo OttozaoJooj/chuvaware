@@ -90,7 +90,8 @@ async function sensorRoutes(fastify) {
   fastify.get(
     '/api/sensor-data',
     async (request, reply) =>{
-        const result = pool.query("SELECT temperatura, umidade, chuva,nivel_chuva_raw, distancia_agua_cm, created_at FROM sensor_reading WHERE created_at >= NOW() - interval '1 hours' ORDER BY created_at ASC;")
+      //"SELECT temperatura, umidade, chuva,nivel_chuva_raw, distancia_agua_cm, created_at FROM sensor_reading WHERE created_at >= NOW() - interval '1 hours' ORDER BY created_at ASC;"
+        const result = pool.query("SELECT temperatura, umidade, chuva,nivel_chuva_raw, distancia_agua_cm, created_at FROM sensor_reading ORDER BY created_at desc LIMIT 1;")
 
         return {
             success: true,

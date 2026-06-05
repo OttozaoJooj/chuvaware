@@ -477,6 +477,8 @@ function apiResponseToPoint(data) {
     precipPct:  rawToPercent(parseInt(data.nivel_chuva_raw, 10)),
     canalCm:    parseInt(data.distancia_agua_cm, 10),  // 0–200 cm
   };
+
+
 }
 
 // Descarta pontos mais antigos que WINDOW_HOURS
@@ -797,7 +799,7 @@ async function fetchAndUpdate() {
     const res  = await fetch(API_URL, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     let data = await res.json();
-    data = data['data'];
+    data = data['data'][0];
     console.log(data)
     // Valida campos obrigatórios
     const required = ['temperatura','umidade','chuva','nivel_chuva_raw','distancia_agua_cm'];/*
@@ -806,6 +808,8 @@ async function fetchAndUpdate() {
     }
 */
     const point = apiResponseToPoint(data);
+
+    console.log(point)
 
     // Adiciona ponto à série e descarta pontos fora da janela de 2h
     series.push(point);
