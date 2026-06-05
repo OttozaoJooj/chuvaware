@@ -4,7 +4,7 @@ const API_URL =
   "http://localhost:3000/api/sensor-data"
 
 // 45 min / 30s = 90 leituras
-const TOTAL_LEITURAS = 90
+const TOTAL_LEITURAS = 180
 
 let leituraAtual = 0
 

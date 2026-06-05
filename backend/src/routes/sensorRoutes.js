@@ -59,7 +59,7 @@ async function sensorRoutes(fastify) {
         ]
       )
 
-    if(chuva && risk && (getCurrentTime() - delay) > 5){
+    if(chuva && risk && (getCurrentTime() - delay) > 600){
         const channelLevelPercent = Math.trunc(100 - (distancia_agua_cm * 100)/200);
         const rainIntensityPercent = Math.trunc((nivel_chuva_raw * 100)/1024);
         await sendTelegramMessage(
