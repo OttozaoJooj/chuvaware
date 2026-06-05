@@ -1,48 +1,40 @@
-//https://api.thingspeak.com/channels/3334856/feeds.json?api_key=NS5N1TSW1ULKFX3O&results=2
-import Fastify from "fastify"
-import cors from "@fastify/cors"
+require("dotenv").config()
 
-import sensorRoutes from "./routes/sensorRoutes"
+const pool = require("./src/db")
 
-const app = Fastify({
-  logger: true
-})
+async function test() {
 
-//
-// CORS
-//
+ /* const result = await pool.query(
+    `
+    INSERT INTO sensor_reading
+    (
+      temperatura,
+      umidade,
+      chuva,
+      nivel_chuva_raw,
+      distancia_agua_cm
+    )
+    VALUES
+    (
+      $1,
+      $2,
+      $3,
+      $4,
+      $5
+    )
+    RETURNING *
+    `,
+    [
+      28.5,
+      90,
+      true,
+      1400,
+      45
+    ]
+  )*/
+  const result = pool.query('SELECT * FROM sensor_reading');
 
-app.register(cors, {
-  origin: true
-})
-
-//
-// Rotas
-//
-
-app.register(sensorRoutes)
-
-//
-// Start
-//
-
-const start = async () => {
-
-  try {
-
-    await app.listen({
-      port: process.env.PORT || 3000,
-      host: "0.0.0.0"
-    })
-
-    console.log("Servidor iniciado!")
-
-  } catch (error) {
-
-    app.log.error(error)
-
-    process.exit(1)
-  }
+  console.log((await result).rows);
 }
 
-start()
+test()

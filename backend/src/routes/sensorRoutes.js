@@ -1,40 +1,66 @@
-
-
+const pool = require("../db")
 
 async function sensorRoutes(fastify) {
 
-  //
-  // POST dados sensores
-  //
+  fastify.post(
+    "/api/sensor-data",
+    async (request, reply) => {
 
-  fastify.post("/api/sensor-data", async (request, reply) => {
+      const {
+        temperatura,
+        umidade,
+        chuva,
+        nivel_chuva_raw,
+        distancia_agua_cm
+      } = request.body
 
-    try {
+      const result = await pool.query(
+        `
+        INSERT INTO sensor_reading
+        (
+          temperatura,
+          umidade,
+          chuva,
+          nivel_chuva_raw,
+          distancia_agua_cm
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5
+        )
+        RETURNING *
+        `,
+        [
+          temperatura,
+          umidade,
+          chuva,
+          nivel_chuva_raw,
+          distancia_agua_cm
+        ]
+      )
 
-      const data = request.body
-
-      console.log(data);
-    } catch (error) {
-
-      console.error(error)
-
-      return reply.status(500).send({
-        success: false,
-        error: "Erro interno"
-      })
+      return {
+        success: true,
+        data: result.rows[0]
+      }
     }
-  })
+  )
 
-  //
-  // GET últimas leituras
-  //
+  fastify.get(
+    '/api/sensor-data',
+    async (request, reply) =>{
+        const result = pool.query("SELECT temperatura, umidade, chuva,nivel_chuva_raw, distancia_agua_cm, created_at FROM sensor_reading WHERE created_at >= NOW() - interval '1 hours' ORDER BY created_at ASC;")
 
-  fastify.get("/api/readings", async () => {
-
-    const readings = 'tete'
-
-    return readings
-  })
+        return {
+            success: true,
+            data: (await result).rows
+        }
+    }
+  )
 }
 
 module.exports = sensorRoutes
