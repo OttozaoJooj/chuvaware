@@ -1,5 +1,13 @@
 const pool = require("../db")
 
+const {
+  sendTelegramMessage
+} = require("../services/telegramService")
+
+const {
+  getRiskLevel
+} = require("../services/riskService")
+
 async function sensorRoutes(fastify) {
 
   fastify.post(
@@ -13,6 +21,8 @@ async function sensorRoutes(fastify) {
         nivel_chuva_raw,
         distancia_agua_cm
       } = request.body
+
+      const risk = getRiskLevel(distancia_agua_cm);
 
       const result = await pool.query(
         `
@@ -43,12 +53,29 @@ async function sensorRoutes(fastify) {
         ]
       )
 
-      return {
-        success: true,
-        data: result.rows[0]
-      }
+    if(chuva && risk){
+        const channelLevelPercent = Math.trunc(100 - (distancia_agua_cm * 100)/200);
+        const rainIntensityPercent = Math.trunc((nivel_chuva_raw * 100)/1024);
+        await sendTelegramMessage(
+            `🚨 ${risk}
+
+            🌧️ Chuva detectada
+
+            📏 Nível do Canal: ${channelLevelPercent}%
+
+            💧 Intensidade da chuva: ${rainIntensityPercent}%
+
+            🕒 Horário: ${new Date().toLocaleString()}`
+        )
+        
     }
-  )
+
+    return {
+    success: true,
+    data: 'Dados Cadastrados com Sucesso'
+    }
+  }
+)
 
   fastify.get(
     '/api/sensor-data',
@@ -61,6 +88,21 @@ async function sensorRoutes(fastify) {
         }
     }
   )
+
+  fastify.get(
+  "/api/test-telegram",
+  async () => {
+
+    await sendTelegramMessage(
+      "🚨 Teste do sistema ChuvaWare"
+    )
+
+    return {
+      success: true,
+      message: "Mensagem enviada"
+    }
+  }
+)
 }
 
 module.exports = sensorRoutes
