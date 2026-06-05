@@ -386,11 +386,18 @@
       <div class="sensor-chip"><div class="led"></div>SEN-004 · Canal (US)</div>
     </div>
     <div class="status-divider"></div>
-    <div class="last-update">Última atualização: <span id="last-update-time">--:--:--</span></div>
+    <div id="api-status-badge" style="display:flex;align-items:center;gap:8px;background:rgba(0,242,255,.07);border:1px solid rgba(0,242,255,.2);border-radius:4px;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--primary);transition:color .4s,border-color .4s;">
+      <div id="api-status-dot" style="width:6px;height:6px;border-radius:50%;background:var(--primary);box-shadow:0 0 8px var(--primary);animation:pulse-led 2s ease-in-out infinite;flex-shrink:0;"></div>
+      <span>Conectando…</span>
+    </div>
     <div class="status-divider"></div>
-    <div class="last-update">Fonte: <span>fakedata.json · API Local</span></div>
+    <div class="last-update">Última leitura: <span id="last-update-time">--:--:--</span></div>
     <div class="status-divider"></div>
-    <div class="last-update">Versão: <span>v2.0.0</span></div>
+    <div class="last-update">Endpoint: <span>localhost:3000/api/sensor-data</span></div>
+    <div class="status-divider"></div>
+    <div class="last-update">Polling: <span>30 s · Janela: 2 h</span></div>
+    <div class="status-divider"></div>
+    <div class="last-update">Versão: <span>v3.0.0</span></div>
   </div>
 
 </div>
@@ -406,150 +413,163 @@ function updateClock() {
   const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   document.getElementById('clock').textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
   document.getElementById('date').textContent  = `${DAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
-  document.getElementById('last-update-time').textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 }
 updateClock();
 setInterval(updateClock, 1000);
 
 // ══════════════════════════════════════════════════════
-// CONVERSÕES E HELPERS
+// CONSTANTES E HELPERS
 // ══════════════════════════════════════════════════════
+
+const API_URL        = 'http://localhost:3000/api/sensor-data';
+const POLL_INTERVAL  = 30_000;   // 30 segundos
+const WINDOW_HOURS   = 2;        // janela de histórico: 2 horas
+const CANAL_RANGE    = 200;      // máximo possível em cm (canal vazio / seguro)
+
+// distancia_agua_cm: 0 = risco máximo, 200 = seguro
+// Limiares para Status de Risco
+const LIM_MEDIO   = 50;   //  0– 49 cm → CRÍTICO
+const LIM_ALTO    = 100;  // 50– 99 cm → ALTO
+const LIM_BAIXO   = 150;  // 100–149 cm → MÉDIO
+                          // 150–200 cm → BAIXO
+
+function canalRisco(cm) {
+  if (cm < LIM_MEDIO)  return 'critico';
+  if (cm < LIM_ALTO)   return 'alto';
+  if (cm < LIM_BAIXO)  return 'medio';
+  return 'baixo';
+}
+
+// % de ocupação do canal: 0 cm = 100% cheio, 200 cm = 0% cheio
+function canalOcup(cm) {
+  return Math.min(100, Math.max(0, ((CANAL_RANGE - cm) / CANAL_RANGE) * 100));
+}
 
 // Precipitação: raw 0–1024 → % 0–100
 function rawToPercent(raw) { return Math.min(100, Math.max(0, (raw / 1024) * 100)); }
 
-// Nível do canal: limiares em cm (sensor mede distância ao topo da água)
-// Quanto MENOR a distância, MAIS CHEIO o canal → MAIOR o risco
-const CANAL_MAX    = 300; // cm: sensor tão longe quanto possível = vazio
-const LIM_CRITICO  = 60;  // < 60 cm → CRÍTICO
-const LIM_ALTO     = 120; // 60–120 → ALTO
-const LIM_MEDIO    = 200; // 120–200 → MÉDIO
-                          // >= 200 → BAIXO
+// Temperatura: normaliza range físico 0–50 °C para eixo 0–100
+function normTemp(t) { return Math.min(100, Math.max(0, (t / 50) * 100)); }
 
-function canalRisco(cm) {
-  if (cm < LIM_CRITICO) return 'critico';
-  if (cm < LIM_ALTO)    return 'alto';
-  if (cm < LIM_MEDIO)   return 'medio';
-  return 'baixo';
+// Formata timestamp para HH:MM DD/MM
+const pad = n => String(n).padStart(2,'0');
+function fmtTs(ts) {
+  if (!ts) return '';
+  return `${pad(ts.getDate())}/${pad(ts.getMonth()+1)} ${pad(ts.getHours())}:${pad(ts.getMinutes())}`;
 }
 
-// Ocupação % do canal (0 = vazio, 100 = transbordando)
-function canalOcup(cm) { return Math.min(100, Math.max(0, ((CANAL_MAX - cm) / CANAL_MAX) * 100)); }
-
-// Temperatura: normaliza para eixo 0–100 (range físico 10–45 °C)
-function normTemp(t) { return Math.min(100, Math.max(0, ((t - 10) / 35) * 100)); }
-
 // ══════════════════════════════════════════════════════
-// SÉRIE DE DADOS HISTÓRICOS
-// Baseados no fakedata.json (field1 = precipitação raw 0–1024)
-// Temperatura e umidade correlacionadas; canal inversamente proporcional à chuva
+// SÉRIE HISTÓRICA (janela de 2 horas)
+// Cada entrada = um ponto recebido da API
 // ══════════════════════════════════════════════════════
-const rawFeed = [
-  { ts: "2026-04-09T23:09:25Z", field1: 20  },
-  { ts: "2026-04-09T23:09:47Z", field1: 20  },
-  { ts: "2026-04-21T19:57:08Z", field1: 20  },
-  { ts: "2026-04-21T19:57:29Z", field1: 30  },
-  { ts: "2026-04-21T19:57:51Z", field1: 30  },
-  { ts: "2026-04-21T21:19:49Z", field1: 59  },
-  { ts: "2026-04-21T21:20:05Z", field1: 60  },
-  { ts: "2026-04-21T21:20:37Z", field1: 60  },
-  { ts: "2026-04-21T21:20:52Z", field1: 60  },
-  { ts: "2026-04-21T21:21:09Z", field1: 77  },
-  { ts: "2026-04-21T21:22:50Z", field1: 77  },
-  { ts: "2026-04-21T21:23:16Z", field1: 38  },
-  { ts: "2026-04-21T21:24:12Z", field1: 38  },
-  { ts: "2026-04-21T21:24:29Z", field1: 34  },
-  { ts: "2026-04-21T21:33:30Z", field1: 34  },
-  { ts: "2026-04-21T21:47:38Z", field1: 34  },
-];
 
-// Constrói série completa com todos os campos
-function buildPoint(ts, precipRaw) {
-  const precipPct = rawToPercent(precipRaw);
-  const temp      = parseFloat((22 + (precipPct / 100) * 6 + (Math.random() - 0.5) * 1.5).toFixed(1));
-  const humidity  = parseFloat((42 + (precipPct / 100) * 52 + (Math.random() - 0.5) * 3).toFixed(1));
-  // Canal: chuva alta → canal sobe → distância cai
-  const canalCm   = Math.max(20, Math.round(CANAL_MAX - (precipPct / 100) * 260 + (Math.random() - 0.5) * 12));
-  return { ts: new Date(ts), precipRaw, precipPct, temp, humidity, canalCm };
+// Estrutura de um ponto normalizado a partir da resposta da API:
+// { ts, temp, humidity, chuva, precipRaw, precipPct, canalCm }
+const series = [];
+
+function apiResponseToPoint(data) {
+  return {
+    ts:         new Date(),                            // timestamp da coleta
+    temp:       parseFloat(data.temperatura),          // °C
+    humidity:   parseFloat(data.umidade),              // 0–100 %
+    chuva:      Boolean(data.chuva),                   // true/false
+    precipRaw:  parseInt(data.nivel_chuva_raw, 10),    // 0–1024
+    precipPct:  rawToPercent(parseInt(data.nivel_chuva_raw, 10)),
+    canalCm:    parseInt(data.distancia_agua_cm, 10),  // 0–200 cm
+  };
 }
 
-const series = rawFeed.map(f => buildPoint(f.ts, f.field1)).sort((a,b) => a.ts - b.ts);
+// Descarta pontos mais antigos que WINDOW_HOURS
+function pruneOldPoints() {
+  const cutoff = Date.now() - WINDOW_HOURS * 60 * 60 * 1000;
+  while (series.length > 0 && series[0].ts.getTime() < cutoff) {
+    series.shift();
+  }
+  // mantém ao menos 2 pontos para o gráfico não quebrar
+  while (series.length < 2 && series.length > 0) {
+    series.unshift({ ...series[0], ts: new Date(series[0].ts.getTime() - 60_000) });
+  }
+}
 
 // ══════════════════════════════════════════════════════
-// ATUALIZA KPI CARDS
+// ESTADO DA INTERFACE
 // ══════════════════════════════════════════════════════
+
 const RISK_COLORS = { baixo:'#00f2ff', medio:'#ffe033', alto:'#ffaa00', critico:'#ff3131' };
-const RISK_LABELS = { baixo:'BAIXO', medio:'MÉDIO', alto:'ALTO', critico:'CRÍTICO' };
+const RISK_LABELS = { baixo:'BAIXO',   medio:'MÉDIO',   alto:'ALTO',    critico:'CRÍTICO' };
 const RISK_DESC   = {
   baixo:   'Canal em nível seguro',
   medio:   'Atenção: nível moderado',
   alto:    'Alerta: canal elevado',
-  critico: 'Iminente transbordo!'
+  critico: 'Iminente transbordo!',
 };
 const RISK_SUB = {
-  baixo:   `Canal ≥ ${LIM_MEDIO} cm livre`,
-  medio:   `Canal ${LIM_ALTO}–${LIM_MEDIO} cm livre`,
-  alto:    `Canal ${LIM_CRITICO}–${LIM_ALTO} cm livre`,
-  critico: `Canal < ${LIM_CRITICO} cm livre`
+  baixo:   `Distância ≥ ${LIM_BAIXO} cm`,
+  medio:   `Distância ${LIM_ALTO}–${LIM_BAIXO - 1} cm`,
+  alto:    `Distância ${LIM_MEDIO}–${LIM_ALTO - 1} cm`,
+  critico: `Distância < ${LIM_MEDIO} cm`,
 };
 
 function applyRisco(nivel) {
-  const card  = document.getElementById('risco-card');
-  const led   = document.getElementById('risco-led');
-  const txt   = document.getElementById('risco-text');
-
-  // remove old skin/nivel classes
+  const card = document.getElementById('risco-card');
+  const led  = document.getElementById('risco-led');
+  const txt  = document.getElementById('risco-text');
   ['baixo','medio','alto','critico'].forEach(n => {
     card.classList.remove('skin-' + n);
     led.classList.remove('nivel-' + n);
     txt.classList.remove('nivel-' + n);
   });
-
   card.classList.add('skin-' + nivel);
-  led.classList.add('nivel-' + nivel);
-  txt.classList.add('nivel-' + nivel);
+  led.classList.add('nivel-'  + nivel);
+  txt.classList.add('nivel-'  + nivel);
   txt.textContent = RISK_LABELS[nivel];
-  document.getElementById('risco-desc').textContent    = RISK_DESC[nivel];
+  document.getElementById('risco-desc').textContent     = RISK_DESC[nivel];
   document.getElementById('risco-sublabel').textContent = RISK_SUB[nivel];
 }
 
 function updateKPIs(p) {
   // Temperatura
-  document.getElementById('kpi-temp').innerHTML = `${p.temp.toFixed(1)}<span class="card-unit">°C</span>`;
-  document.getElementById('kpi-temp-sub').textContent = p.temp < 20 ? 'Temperatura amena' : p.temp < 28 ? 'Temperatura moderada' : 'Temperatura elevada';
+  document.getElementById('kpi-temp').innerHTML =
+    `${p.temp.toFixed(1)}<span class="card-unit">°C</span>`;
+  document.getElementById('kpi-temp-sub').textContent =
+    p.temp < 18 ? 'Temperatura baixa' : p.temp < 28 ? 'Temperatura moderada' : 'Temperatura elevada';
 
   // Precipitação
-  document.getElementById('kpi-precip').innerHTML = `${p.precipPct.toFixed(1)}<span class="card-unit">%</span>`;
-  document.getElementById('kpi-precip-sub').textContent = `Raw: ${p.precipRaw} / 1024`;
+  document.getElementById('kpi-precip').innerHTML =
+    `${p.precipPct.toFixed(1)}<span class="card-unit">%</span>`;
+  document.getElementById('kpi-precip-sub').textContent =
+    `Raw: ${p.precipRaw} / 1024 · Chuva: ${p.chuva ? 'Sim ☔' : 'Não ☀️'}`;
 
   // Umidade
-  document.getElementById('kpi-hum').innerHTML = `${Math.round(p.humidity)}<span class="card-unit">%</span>`;
-  document.getElementById('kpi-hum-sub').textContent = p.humidity < 40 ? 'Ar seco' : p.humidity < 70 ? 'Umidade normal' : 'Saturação elevada — atenção';
+  document.getElementById('kpi-hum').innerHTML =
+    `${Math.round(p.humidity)}<span class="card-unit">%</span>`;
+  document.getElementById('kpi-hum-sub').textContent =
+    p.humidity < 40 ? 'Ar seco' : p.humidity < 70 ? 'Umidade normal' : 'Saturação elevada — atenção';
 
   // Canal
-  const nivel = canalRisco(p.canalCm);
-  const ocup  = canalOcup(p.canalCm);
+  const nivel      = canalRisco(p.canalCm);
+  const ocup       = canalOcup(p.canalCm);
   const canalColor = RISK_COLORS[nivel];
 
   const canalValEl = document.getElementById('kpi-canal');
   canalValEl.innerHTML = `${p.canalCm}<span class="card-unit">cm</span>`;
-  canalValEl.style.color = canalColor;
+  canalValEl.style.color      = canalColor;
   canalValEl.style.textShadow = `0 0 20px ${canalColor}60`;
 
   const barEl = document.getElementById('canal-fill-bar');
   barEl.style.width      = ocup.toFixed(1) + '%';
   barEl.style.background = canalColor;
 
-  const barLbl = document.getElementById('canal-fill-label');
-  barLbl.textContent = `${ocup.toFixed(0)}% ocupação · ${RISK_DESC[nivel]}`;
+  document.getElementById('canal-fill-label').textContent =
+    `${ocup.toFixed(0)}% ocupação · ${RISK_DESC[nivel]}`;
 
   // Status de risco
   applyRisco(nivel);
-}
 
-// Inicializa com último ponto
-const latest = series[series.length - 1];
-updateKPIs(latest);
+  // Timestamp da última atualização
+  document.getElementById('last-update-time').textContent =
+    `${pad(p.ts.getHours())}:${pad(p.ts.getMinutes())}:${pad(p.ts.getSeconds())}`;
+}
 
 // ══════════════════════════════════════════════════════
 // SVG ENGINE
@@ -567,8 +587,8 @@ function spline(pts) {
   let d = `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)}`;
   for (let i = 0; i < pts.length - 1; i++) {
     const p0 = pts[Math.max(0,i-1)], p1 = pts[i], p2 = pts[i+1], p3 = pts[Math.min(pts.length-1,i+2)];
-    const c1x = p1.x + (p2.x-p0.x)/6, c1y = p1.y + (p2.y-p0.y)/6;
-    const c2x = p2.x - (p3.x-p1.x)/6, c2y = p2.y - (p3.y-p1.y)/6;
+    const c1x = p1.x+(p2.x-p0.x)/6, c1y = p1.y+(p2.y-p0.y)/6;
+    const c2x = p2.x-(p3.x-p1.x)/6, c2y = p2.y-(p3.y-p1.y)/6;
     d += ` C ${c1x.toFixed(2)},${c1y.toFixed(2)} ${c2x.toFixed(2)},${c2y.toFixed(2)} ${p2.x.toFixed(2)},${p2.y.toFixed(2)}`;
   }
   return d;
@@ -595,47 +615,53 @@ function dot(svg, x, y, color, html) {
   c.setAttribute('cx', x.toFixed(2)); c.setAttribute('cy', y.toFixed(2));
   c.setAttribute('r','4'); c.setAttribute('fill', color); c.setAttribute('class','data-dot');
   c.style.cssText = `cursor:pointer;filter:drop-shadow(0 0 4px ${color});transition:r .15s;`;
-  c.addEventListener('mouseenter', () => { c.setAttribute('r','6'); TIP.innerHTML = html; TIP.style.display = 'block'; });
+  c.addEventListener('mouseenter', () => { c.setAttribute('r','6'); TIP.innerHTML = html; TIP.style.display='block'; });
   c.addEventListener('mousemove',  e  => { TIP.style.left=(e.clientX+14)+'px'; TIP.style.top=(e.clientY-54)+'px'; });
   c.addEventListener('mouseleave', () => { c.setAttribute('r','4'); TIP.style.display='none'; });
   svg.appendChild(c);
 }
 
-function fmtTs(ts) {
-  if (!ts) return '';
-  const pad = n => String(n).padStart(2,'0');
-  return `${pad(ts.getDate())}/${pad(ts.getMonth()+1)} ${pad(ts.getHours())}:${pad(ts.getMinutes())}`;
-}
-
-function setXLabels(svg, pts, count=5) {
+function setXLabels(svg, pts, count=6) {
   svg.querySelectorAll('.xl-dyn').forEach(e=>e.remove());
-  const step = Math.max(1, Math.floor(pts.length/count));
+  if (pts.length === 0) return;
+  const step = Math.max(1, Math.floor(pts.length / count));
   const idx  = [];
-  for (let i=0;i<pts.length;i+=step) idx.push(i);
+  for (let i=0; i<pts.length; i+=step) idx.push(i);
   if (!idx.includes(pts.length-1)) idx.push(pts.length-1);
-  idx.forEach(i=>{
+  idx.forEach(i => {
     const p = pts[i];
     const t = document.createElementNS('http://www.w3.org/2000/svg','text');
-    t.textContent = p.ts ? `${String(p.ts.getHours()).padStart(2,'0')}:${String(p.ts.getMinutes()).padStart(2,'0')}` : '--';
+    t.textContent = p.ts
+      ? `${pad(p.ts.getHours())}:${pad(p.ts.getMinutes())}`
+      : '--';
     t.setAttribute('x', p.x.toFixed(2)); t.setAttribute('y','218');
     t.setAttribute('text-anchor','middle'); t.setAttribute('class','x-label xl-dyn');
     svg.appendChild(t);
   });
 }
 
-// ── CHART 1: Temp + Precipitação + Umidade ──
-// Todos mapeados 0-100 no eixo Y.
-// Temp: range 10-45°C → normalizado
-// Precipitação: já é 0-100%
-// Umidade: já é 0-100%
+// ── CHART 1: Temperatura + Precipitação + Umidade ──
+// Eixo Y normalizado 0–100 para comparação visual simultânea.
+// Temperatura: mapeada do range 0–50 °C.
+// Precipitação e Umidade: já são 0–100 %.
 function buildChart1() {
+  if (series.length < 1) return;
   const svg = document.getElementById('chart1');
   const n   = series.length;
   svg.querySelectorAll('.data-dot,.xl-dyn').forEach(e=>e.remove());
 
-  const tPts = series.map((p,i) => ({ x:sx(i,n), y:sy(normTemp(p.temp),0,100),   ts:p.ts, raw:p.temp,     label:`<span style="color:#74f5ff">● Temperatura</span> <b>${p.temp.toFixed(1)} °C</b>` }));
-  const pPts = series.map((p,i) => ({ x:sx(i,n), y:sy(p.precipPct,0,100),         ts:p.ts, raw:p.precipPct,label:`<span style="color:#00f2ff">● Precipitação</span> <b>${p.precipPct.toFixed(1)}%</b> <span style="color:#849495">(raw ${p.precipRaw})</span>` }));
-  const hPts = series.map((p,i) => ({ x:sx(i,n), y:sy(p.humidity,0,100),           ts:p.ts, raw:p.humidity, label:`<span style="color:#ddb7ff">● Umidade</span> <b>${p.humidity.toFixed(0)}%</b>` }));
+  const tPts = series.map((p,i) => ({
+    x: sx(i,n), y: sy(normTemp(p.temp), 0, 100), ts: p.ts,
+    label: `<span style="color:#74f5ff">● Temperatura</span> <b>${p.temp.toFixed(1)} °C</b>`,
+  }));
+  const pPts = series.map((p,i) => ({
+    x: sx(i,n), y: sy(p.precipPct, 0, 100), ts: p.ts,
+    label: `<span style="color:#00f2ff">● Precipitação</span> <b>${p.precipPct.toFixed(1)}%</b> <span style="color:#849495">(raw ${p.precipRaw})</span>`,
+  }));
+  const hPts = series.map((p,i) => ({
+    x: sx(i,n), y: sy(p.humidity, 0, 100), ts: p.ts,
+    label: `<span style="color:#ddb7ff">● Umidade</span> <b>${p.humidity.toFixed(0)}%</b>`,
+  }));
 
   const tPath = spline(tPts), pPath = spline(pPts), hPath = spline(hPts);
   const fx = tPts[0].x, lx = tPts[n-1].x;
@@ -650,50 +676,47 @@ function buildChart1() {
   ft.setAttribute('d', areaClosed(tPath,fx,lx));
   fp.setAttribute('d', areaClosed(pPath,fx,lx));
   fh.setAttribute('d', areaClosed(hPath,fx,lx));
-  showFill(ft, 900); showFill(fp, 1100); showFill(fh, 1300);
+  showFill(ft, 800); showFill(fp, 1000); showFill(fh, 1200);
 
   tPts.forEach((p,i) => dot(svg, p.x, p.y, '#74f5ff', `${p.label}<br><span style="color:#849495;font-size:10px">${fmtTs(series[i].ts)}</span>`));
   pPts.forEach((p,i) => dot(svg, p.x, p.y, '#00f2ff', `${p.label}<br><span style="color:#849495;font-size:10px">${fmtTs(series[i].ts)}</span>`));
   hPts.forEach((p,i) => dot(svg, p.x, p.y, '#ddb7ff', `${p.label}<br><span style="color:#849495;font-size:10px">${fmtTs(series[i].ts)}</span>`));
 
-  setXLabels(svg, tPts.map((p,i)=>({...p, ts:series[i].ts})));
+  setXLabels(svg, tPts.map((p,i) => ({...p, ts: series[i].ts})));
 }
 
 // ── CHART 2: Nível do Canal ──
-// Eixo Y em cm real. Linha alta = canal seguro. Linha baixa = canal cheio = risco.
-// Zonas de risco no fundo: vermelho embaixo, azul em cima.
+// Eixo Y em cm reais (0–200). Linha ALTA = canal seguro. Linha BAIXA = canal cheio = risco.
+// Zonas de risco coloridas no fundo: vermelho em baixo, ciano em cima.
 function buildChart2() {
+  if (series.length < 1) return;
   const svg = document.getElementById('chart2');
   const n   = series.length;
   svg.querySelectorAll('.data-dot,.xl-dyn,.rz,.yl-dyn').forEach(e=>e.remove());
 
-  const allCm = series.map(p=>p.canalCm);
-  const yLo   = Math.max(0,   Math.min(...allCm) - 25);
-  const yHi   = Math.min(350, Math.max(...allCm) + 35);
+  // Eixo Y fixo 0–200 cm (range do sensor)
+  const yLo = 0, yHi = 200;
 
-  // Y-axis labels em cm
-  [0,.25,.5,.75,1].forEach(f => {
-    const v  = yLo + (yHi-yLo)*f;
-    const yy = sy(v, yLo, yHi);
-    const t  = document.createElementNS('http://www.w3.org/2000/svg','text');
-    t.textContent = Math.round(v)+'cm';
-    t.setAttribute('x','44'); t.setAttribute('y', yy.toFixed(2));
+  // Labels eixo Y em cm
+  [200, 150, 100, 50, 0].forEach(v => {
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.textContent = v + 'cm';
+    t.setAttribute('x','44'); t.setAttribute('y', sy(v, yLo, yHi).toFixed(2));
     t.setAttribute('text-anchor','end'); t.setAttribute('class','y-label yl-dyn');
     svg.appendChild(t);
   });
 
-  // Zonas de risco (menores valores = maior risco → vermelho fica na PARTE BAIXA do gráfico)
+  // Zonas de risco no fundo
+  // distancia baixa (canal cheio) = vermelho embaixo do gráfico
   const zones = [
-    { lo: yLo,        hi: LIM_CRITICO, color:'rgba(255,49,49,.12)',  label:'CRÍTICO' },
-    { lo: LIM_CRITICO,hi: LIM_ALTO,    color:'rgba(255,102,0,.09)',  label:'ALTO'    },
-    { lo: LIM_ALTO,   hi: LIM_MEDIO,   color:'rgba(255,170,0,.07)',  label:'MÉDIO'   },
-    { lo: LIM_MEDIO,  hi: yHi,         color:'rgba(0,242,255,.04)',  label:'BAIXO'   },
+    { lo: 0,          hi: LIM_MEDIO,  color:'rgba(255,49,49,.13)',  label:'CRÍTICO' },
+    { lo: LIM_MEDIO,  hi: LIM_ALTO,   color:'rgba(255,102,0,.10)',  label:'ALTO'    },
+    { lo: LIM_ALTO,   hi: LIM_BAIXO,  color:'rgba(255,170,0,.08)',  label:'MÉDIO'   },
+    { lo: LIM_BAIXO,  hi: 200,        color:'rgba(0,242,255,.05)',  label:'BAIXO'   },
   ];
   const pivot = svg.querySelector('path');
   zones.forEach(z => {
-    const zLo = Math.max(z.lo, yLo), zHi = Math.min(z.hi, yHi);
-    if (zLo >= zHi) return;
-    const y1 = sy(zHi, yLo, yHi), y2 = sy(zLo, yLo, yHi);
+    const y1 = sy(z.hi, yLo, yHi), y2 = sy(z.lo, yLo, yHi);
     const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
     r.setAttribute('x','50'); r.setAttribute('y', y1.toFixed(2));
     r.setAttribute('width','520'); r.setAttribute('height',(y2-y1).toFixed(2));
@@ -703,17 +726,16 @@ function buildChart2() {
     lt.textContent = z.label;
     lt.setAttribute('x','574'); lt.setAttribute('y', ((y1+y2)/2+4).toFixed(2));
     lt.setAttribute('text-anchor','start'); lt.setAttribute('class','rz');
-    lt.style.cssText='font:9px "Space Grotesk",sans-serif;fill:rgba(255,255,255,.25);letter-spacing:.1em;';
+    lt.style.cssText = 'font:9px "Space Grotesk",sans-serif;fill:rgba(255,255,255,.25);letter-spacing:.1em;';
     svg.appendChild(lt);
   });
 
   const cPts = series.map((p,i) => ({
-    x: sx(i,n), y: sy(p.canalCm, yLo, yHi), ts: p.ts, val: p.canalCm
+    x: sx(i,n), y: sy(p.canalCm, yLo, yHi), ts: p.ts, val: p.canalCm,
   }));
   const cPath = spline(cPts);
   const fx = cPts[0].x, lx = cPts[n-1].x;
 
-  // Cor da linha conforme último risco
   const lastNivel = canalRisco(cPts[n-1].val);
   const lineColor = RISK_COLORS[lastNivel];
 
@@ -727,13 +749,12 @@ function buildChart2() {
 
   const fillEl = document.getElementById('fill-canal');
   fillEl.setAttribute('d', areaClosed(cPath, fx, lx));
-  showFill(fillEl, 1000);
+  showFill(fillEl, 900);
 
-  // Dots, cor por zona
   cPts.forEach((p,i) => {
-    const nv  = canalRisco(p.val);
-    const dc  = RISK_COLORS[nv];
-    const oc  = canalOcup(p.val);
+    const nv = canalRisco(p.val);
+    const dc = RISK_COLORS[nv];
+    const oc = canalOcup(p.val);
     dot(svg, p.x, p.y, dc,
       `<span style="color:${dc}">● Canal ${RISK_LABELS[nv]}</span> <b>${p.val} cm livre</b><br>` +
       `Ocupação: ${oc.toFixed(0)}% · ${RISK_DESC[nv]}<br>` +
@@ -741,42 +762,83 @@ function buildChart2() {
     );
   });
 
-  setXLabels(svg, cPts.map((p,i)=>({...p, ts:series[i].ts})));
+  setXLabels(svg, cPts.map((p,i) => ({...p, ts: series[i].ts})));
 }
 
-buildChart1();
-buildChart2();
+// ══════════════════════════════════════════════════════
+// ESTADO DO LOADING / ERRO
+// ══════════════════════════════════════════════════════
+function setApiStatus(state) {
+  // state: 'loading' | 'ok' | 'error'
+  const badge = document.getElementById('api-status-badge');
+  const dot   = document.getElementById('api-status-dot');
+  if (!badge) return;
+  const cfg = {
+    loading: { text:'Conectando…',    color:'rgba(255,224,51,.7)',  glow:'var(--warn-yellow)' },
+    ok:      { text:'API Conectada',  color:'var(--primary)',        glow:'var(--primary)'     },
+    error:   { text:'Sem sinal API',  color:'var(--error)',          glow:'var(--error)'       },
+  };
+  const c = cfg[state] || cfg.loading;
+  badge.style.color       = c.color;
+  badge.style.borderColor = c.color.replace('var(--','rgba(').replace(')',',0.3)');
+  if (dot) { dot.style.background = c.color; dot.style.boxShadow = `0 0 8px ${c.glow}`; }
+  badge.querySelector('span').textContent = c.text;
+}
 
 // ══════════════════════════════════════════════════════
-// LIVE UPDATE — drift a cada 10 s
+// FETCH DA API
+// Requisita GET http://localhost:3000/api/sensor-data
+// Espera resposta no formato modelo_json:
+//   { temperatura, umidade, chuva, nivel_chuva_raw, distancia_agua_cm }
 // ══════════════════════════════════════════════════════
-let liveRaw    = latest.precipRaw;
-let liveCanalCm = latest.canalCm;
+async function fetchAndUpdate() {
+  setApiStatus('loading');
+  try {
+    const res  = await fetch(API_URL, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    let data = await res.json();
+    data = data['data'];
+    console.log(data)
+    // Valida campos obrigatórios
+    const required = ['temperatura','umidade','chuva','nivel_chuva_raw','distancia_agua_cm'];/*
+    for (const k of required) {
+      if (data[k] === undefined || data[k] === null) throw new Error(`Campo ausente: ${k}`);
+    }
+*/
+    const point = apiResponseToPoint(data);
 
-setInterval(() => {
-  // drift precipitação raw (0–1024)
-  liveRaw = Math.max(0, Math.min(1024, liveRaw + (Math.random() - 0.45) * 45));
-  const pct  = rawToPercent(liveRaw);
-  const temp = parseFloat((22 + (pct/100)*6 + (Math.random()-.5)*1.5).toFixed(1));
-  const hum  = parseFloat((42 + (pct/100)*52 + (Math.random()-.5)*3).toFixed(1));
-  // canal: mais chuva → canal sobe → distância cai
-  liveCanalCm = Math.max(20, Math.min(CANAL_MAX, liveCanalCm - (pct/100)*4 + (Math.random()-.4)*10));
-  const canalCm = Math.round(liveCanalCm);
+    // Adiciona ponto à série e descarta pontos fora da janela de 2h
+    series.push(point);
+    pruneOldPoints();
 
-  const newPt = { ts:new Date(), precipRaw:Math.round(liveRaw), precipPct:pct, temp, humidity:hum, canalCm };
-  series.push(newPt);
-  if (series.length > 40) series.shift();
+    // Atualiza KPIs com o ponto mais recente
+    updateKPIs(point);
 
-  updateKPIs(newPt);
+    // Reconstrói gráficos
+    document.querySelectorAll('#chart1 .data-dot,#chart1 .xl-dyn').forEach(e=>e.remove());
+    buildChart1();
+    document.querySelectorAll('#chart2 .data-dot,#chart2 .xl-dyn,#chart2 .rz,#chart2 .yl-dyn').forEach(e=>e.remove());
+    buildChart2();
 
-  // Rebuild chart 1
-  document.querySelectorAll('#chart1 .data-dot,#chart1 .xl-dyn').forEach(e=>e.remove());
-  buildChart1();
+    setApiStatus('ok');
+    console.info('[Chuvaware] Dados atualizados às', point.ts.toLocaleTimeString());
 
-  // Rebuild chart 2
-  document.querySelectorAll('#chart2 .data-dot,#chart2 .xl-dyn,#chart2 .rz,#chart2 .yl-dyn').forEach(e=>e.remove());
-  buildChart2();
-}, 10000);
+  } catch (err) {
+    setApiStatus('error');
+    console.warn('[Chuvaware] Falha na requisição:', err.message);
+    // Se há dados anteriores na série, mantém exibição e avisa no footer
+    document.getElementById('last-update-time').textContent = 'Erro na última leitura';
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// INICIALIZAÇÃO
+// ══════════════════════════════════════════════════════
+// Primeira requisição imediata ao carregar a página
+fetchAndUpdate();
+
+// Polling a cada 30 segundos
+setInterval(fetchAndUpdate, POLL_INTERVAL);
 </script>
 </body>
 </html>

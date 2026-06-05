@@ -1,0 +1,7 @@
+{
+temperatura: 22.4,
+umidade: 96,
+chuva: true,
+nivel_chuva_raw: 926,
+distancia_agua_cm: 51
+}

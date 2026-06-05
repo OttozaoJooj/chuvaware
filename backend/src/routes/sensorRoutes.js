@@ -1,5 +1,10 @@
 const pool = require("../db")
 
+
+function getCurrentTime(){
+    return Math.floor(Date.now()/1000);
+}
+
 const {
   sendTelegramMessage
 } = require("../services/telegramService")
@@ -8,6 +13,7 @@ const {
   getRiskLevel
 } = require("../services/riskService")
 
+let delay = getCurrentTime();
 async function sensorRoutes(fastify) {
 
   fastify.post(
@@ -53,20 +59,24 @@ async function sensorRoutes(fastify) {
         ]
       )
 
-    if(chuva && risk){
+    if(chuva && risk && (getCurrentTime() - delay) > 5){
         const channelLevelPercent = Math.trunc(100 - (distancia_agua_cm * 100)/200);
         const rainIntensityPercent = Math.trunc((nivel_chuva_raw * 100)/1024);
         await sendTelegramMessage(
             `🚨 ${risk}
 
-            🌧️ Chuva detectada
+    🌧️ Chuva detectada
 
-            📏 Nível do Canal: ${channelLevelPercent}%
+    📏 Nível do Canal: ${channelLevelPercent}%
 
-            💧 Intensidade da chuva: ${rainIntensityPercent}%
+    💧 Intensidade da chuva: ${rainIntensityPercent}%
 
-            🕒 Horário: ${new Date().toLocaleString()}`
+    🕒 Horário: ${new Date().toLocaleString("pt-BR", {timeZone: "UTC"})}
+
+    `
         )
+
+        delay = getCurrentTime();
         
     }
 
